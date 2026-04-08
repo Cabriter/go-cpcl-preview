@@ -14,13 +14,13 @@
     "strip_comment_line": true
   },
   "bluetooth": {
-    "device_address": "",
-    "device_name": "CC3",
-    "interactive": true,
+    "device_address": "C0:34:57:43:35:09",
+    "device_name": "CS3_3509L",
+    "interactive": false,
     "scan_timeout_seconds": 15,
     "connect_timeout_seconds": 15,
-    "service_uuid": "0000FF00-0000-1000-8000-00805F9B34FB",
-    "write_characteristic_uuid": "0000FF02-0000-1000-8000-00805F9B34FB",
+    "service_uuid": "0000FFF0-0000-1000-8000-00805F9B34FB",
+    "write_characteristic_uuid": "0000FFF2-0000-1000-8000-00805F9B34FB",
     "write_chunk_size": 180,
     "write_without_response": true
   }
