@@ -1,0 +1,10 @@
+{
+  "input_path": "./cpcl_input.txt",
+  "output_path": "./output/preview.png",
+  "render": {
+    "font_path": "./Arial Unicode.ttf",
+    "font_size": 24,
+    "barcode_module_width": 2,
+    "qrcode_module_size": 6
+  }
+}

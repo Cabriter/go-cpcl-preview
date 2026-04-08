@@ -1,0 +1,4 @@
+java/
+output/
+*.log
+.DS_Store
