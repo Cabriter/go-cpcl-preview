@@ -149,7 +149,7 @@ func drawText(img *image.RGBA, face font.Face, x, y int, text string, rotation i
 }
 
 func drawTextRotated(img *image.RGBA, face font.Face, x, y int, text string, rotation int, c color.Color) {
-	rotation = ((rotation%360)+360)%360
+	rotation = ((rotation % 360) + 360) % 360
 	if rotation == 0 {
 		drawText(img, face, x, y, text, 0, c)
 		return
