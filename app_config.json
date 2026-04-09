@@ -11,7 +11,10 @@
     "cpcl_path": "./cpcl_input.txt",
     "append_print_suffix": true,
     "encoding": "gbk",
-    "strip_comment_line": true
+    "strip_comment_line": true,
+    "skip_rebuild": false,
+    "export_rebuild_cpcl": false,
+    "rebuild_cpcl_path": "./output/rebuild_cpcl.txt"
   },
   "bluetooth": {
     "device_address": "C0:34:57:43:35:09",

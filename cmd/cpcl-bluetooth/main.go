@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -126,7 +127,11 @@ func chooseDeviceInteractively(sender *bluetooth.Sender) (bluetooth.ScanDevice, 
 // prepareCPCLPayload 根据配置补齐 FORM/PRINT 结尾，避免打印机不出纸。
 func prepareCPCLPayload(raw []byte, printCfg config.PrintConfig, logger interface{ Printf(string, ...any) }) []byte {
 	processedText := normalizeCPCLText(raw, printCfg.StripCommentLine)
-	processedText = canonicalizeForPrinter(processedText, printCfg.Encoding, logger)
+	if printCfg.SkipRebuild {
+		logger.Printf("配置 skip_rebuild=true，跳过发送前 CPCL 重建，按原文发送（仍会执行编码与 FORM/PRINT 补齐）")
+	} else {
+		processedText = canonicalizeForPrinter(processedText, printCfg.Encoding, logger)
+	}
 	trimmed := bytes.TrimSpace([]byte(processedText))
 	normalized := strings.ToUpper(string(trimmed))
 	hasForm := strings.Contains(normalized, "\nFORM")
@@ -149,7 +154,9 @@ func prepareCPCLPayload(raw []byte, printCfg config.PrintConfig, logger interfac
 		buffer.WriteString("\nPRINT")
 	}
 	buffer.WriteString("\n")
-	encoded := encodeByConfig(buffer.String(), printCfg.Encoding, logger)
+	finalText := buffer.String()
+	exportRebuildCPCL(finalText, printCfg, logger)
+	encoded := encodeByConfig(finalText, printCfg.Encoding, logger)
 	logger.Printf("CPCL 编码: encoding=%s bytes=%d", printCfg.Encoding, len(encoded))
 	return encoded
 }
@@ -165,7 +172,9 @@ func canonicalizeForPrinter(input string, encoding string, logger interface{ Pri
 	scaledHeight := maxInt(scaleCoord(label.Height, scale), 200)
 	scaledWidth := maxInt(scaleCoord(label.Width, scale), paperWidth)
 	lines := make([]string, 0, len(label.Instructions)+8)
+	// 数字规则1：发送重建时，头部固定为 200dpi，并强制 qty=1，避免多张连打。
 	lines = append(lines, fmt.Sprintf("! 0 200 200 %d 1", scaledHeight))
+	// 数字规则2：PW/PH 使用缩放后的宽高，保持打印内容尽量落在纸宽内。
 	lines = append(lines, fmt.Sprintf("PW %d", scaledWidth))
 	lines = append(lines, fmt.Sprintf("PH %d", scaledHeight))
 	if isChineseEncoding(encoding) {
@@ -175,6 +184,7 @@ func canonicalizeForPrinter(input string, encoding string, logger interface{ Pri
 	for _, ins := range label.Instructions {
 		switch v := ins.(type) {
 		case parser.TextInstruction:
+			// 数字规则3：TEXT* 统一重建为 font=24，size 按缩放计算并设置最小值，降低固件字模差异导致的偏移。
 			fontSize := maxInt(scaleCoord(24, scale), 20)
 			x := scaleCoord(v.X, scale)
 			y := scaleCoord(v.Y, scale)
@@ -189,8 +199,10 @@ func canonicalizeForPrinter(input string, encoding string, logger interface{ Pri
 				lines = append(lines, fmt.Sprintf("TEXT 24 %d %d %d %s", fontSize, x, y, v.Text))
 			}
 		case parser.LineInstruction:
+			// 数字规则4：LINE 坐标与线宽按比例缩放，线宽最小 1，避免缩放后不可见。
 			lines = append(lines, fmt.Sprintf("LINE %d %d %d %d %d", scaleCoord(v.X1, scale), scaleCoord(v.Y1, scale), scaleCoord(v.X2, scale), scaleCoord(v.Y2, scale), maxInt(scaleCoord(v.Thickness, scale), 1)))
 		case parser.BoxInstruction:
+			// 数字规则5：内部语义是 x/y/width/height，重建发送时转换为 BOX x1 y1 x2 y2 thickness。
 			x1 := scaleCoord(v.X, scale)
 			y1 := scaleCoord(v.Y, scale)
 			x2 := scaleCoord(v.X+v.Width, scale)
@@ -201,12 +213,14 @@ func canonicalizeForPrinter(input string, encoding string, logger interface{ Pri
 			if v.Vertical {
 				cmd = "VBARCODE"
 			}
+			// 数字规则6：BARCODE/VBARCODE 的 wide/narrow 统一为同一 module，减少不同机型条码宽度解释差异。
 			module := maxInt(scaleCoord(maxInt(v.ModuleWidth, 2), scale), 1)
 			height := maxInt(scaleCoord(maxInt(v.Height, 80), scale), 60)
 			x := scaleCoord(v.X, scale)
 			y := scaleCoord(v.Y, scale)
 			lines = append(lines, fmt.Sprintf("%s 128 %d %d %d %d %d %s", cmd, module, module, height, x, y, v.Data))
 		case parser.QRCodeInstruction:
+			// 数字规则7：二维码模块尺寸按比例缩放，且设置最小 4，降低小码点导致的漏扫概率。
 			moduleSize := maxInt(scaleCoord(maxInt(v.ModuleSize, 6), scale), 4)
 			x := scaleCoord(v.X, scale)
 			y := scaleCoord(v.Y, scale)
@@ -216,6 +230,26 @@ func canonicalizeForPrinter(input string, encoding string, logger interface{ Pri
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func exportRebuildCPCL(content string, printCfg config.PrintConfig, logger interface{ Printf(string, ...any) }) {
+	if !printCfg.ExportRebuildCPCL {
+		return
+	}
+	targetPath := strings.TrimSpace(printCfg.RebuildCPCLPath)
+	if targetPath == "" {
+		logger.Printf("已启用 export_rebuild_cpcl，但 rebuild_cpcl_path 为空，跳过导出")
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+		logger.Printf("创建重建 CPCL 输出目录失败: path=%s err=%v", targetPath, err)
+		return
+	}
+	if err := os.WriteFile(targetPath, []byte(content), 0o644); err != nil {
+		logger.Printf("导出重建 CPCL 文件失败: path=%s err=%v", targetPath, err)
+		return
+	}
+	logger.Printf("导出重建 CPCL 文件成功: path=%s bytes=%d", targetPath, len(content))
 }
 
 func isChineseEncoding(encoding string) bool {

@@ -30,6 +30,9 @@ type PrintConfig struct {
 	AppendPrintSuffix bool   `json:"append_print_suffix"`
 	Encoding          string `json:"encoding"`
 	StripCommentLine  bool   `json:"strip_comment_line"`
+	SkipRebuild       bool   `json:"skip_rebuild"`
+	ExportRebuildCPCL bool   `json:"export_rebuild_cpcl"`
+	RebuildCPCLPath   string `json:"rebuild_cpcl_path"`
 }
 
 // BluetoothConfig 保存蓝牙连接参数。
@@ -94,6 +97,9 @@ func defaultConfig() *AppConfig {
 			AppendPrintSuffix: true,
 			Encoding:          "gbk",
 			StripCommentLine:  true,
+			SkipRebuild:       false,
+			ExportRebuildCPCL: false,
+			RebuildCPCLPath:   "./output/rebuild_cpcl.txt",
 		},
 		Bluetooth: BluetoothConfig{
 			DeviceAddress:           "",
@@ -135,6 +141,9 @@ func applyDefaultValues(cfg *AppConfig) {
 	if cfg.Print.Encoding == "" {
 		cfg.Print.Encoding = defaultCfg.Print.Encoding
 	}
+	if cfg.Print.RebuildCPCLPath == "" {
+		cfg.Print.RebuildCPCLPath = defaultCfg.Print.RebuildCPCLPath
+	}
 	if cfg.Bluetooth.ScanTimeoutSeconds <= 0 {
 		cfg.Bluetooth.ScanTimeoutSeconds = defaultCfg.Bluetooth.ScanTimeoutSeconds
 	}
@@ -160,6 +169,7 @@ func resolveRelativePaths(cfg *AppConfig, projectDir string) {
 	cfg.OutputPath = resolvePath(cfg.OutputPath, projectDir)
 	cfg.Render.FontPath = resolvePath(cfg.Render.FontPath, projectDir)
 	cfg.Print.CPCLPath = resolvePath(cfg.Print.CPCLPath, projectDir)
+	cfg.Print.RebuildCPCLPath = resolvePath(cfg.Print.RebuildCPCLPath, projectDir)
 }
 
 func resolvePath(path, baseDir string) string {
